@@ -21,10 +21,10 @@ if 'current_page' not in st.session_state:
 def handle_navigation():
     if st.session_state['current_page'] == 'Home':
         home()
+    elif st.session_state['current_page'] == 'Device Reading':  
+        device_reading()
     elif st.session_state['current_page'] == 'Device Center':
         device_center()
-    elif st.session_state['current_page'] == 'Device Reading':  # Updated page name
-        device_reading()
     elif st.session_state['current_page'] == 'User Management':
         user_management()
     elif st.session_state['current_page'] == 'Logout':
@@ -34,7 +34,7 @@ def handle_navigation():
 if st.session_state['logged_in']:
     # Create a navigation bar using the streamlit-navigation-bar library
     selected = st_navbar(
-        pages=['Home', 'Device Center', 'Device Reading', 'User Management', 'Logout'],  # Added Device Reading
+        pages=['Home', 'Device Reading','Device Center', 'User Management', 'Logout'],  # Added Device Reading
         key='navbar'
     )
 
