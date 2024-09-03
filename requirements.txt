@@ -1,1 +1,5 @@
 streamlit
+firebase-admin
+streamlit-authenticator
+streamlit-navigation-bar
+fpdf
