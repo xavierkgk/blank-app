@@ -1,118 +1,220 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
-from firestore_utils import get_database  # Ensure you have a function to get the Firestore database connection
+from firestore_utils import get_database, get_device_configs
 
 def fetch_latest_readings(collection_name):
-    """Fetch the latest reading for each sensor from Firestore."""
+    """Fetch the latest reading for each sensor from Firestore and format the data."""
     db = get_database()
     docs = db.collection(collection_name).order_by('timestamp', direction='DESCENDING').get()
-    
-    data = []
-    seen_sensors = set()
 
+    data = []
+    
     for doc in docs:
         record = doc.to_dict()
-        sensor_id = record.get('sensorID')
-        if sensor_id not in seen_sensors:
-            data.append(record)
-            seen_sensors.add(sensor_id)
+        timestamp = record.get('timestamp')
 
-    return pd.DataFrame(data) if data else pd.DataFrame()
+        # Loop over the fields to detect sensor readings
+        for key, value in record.items():
+            if key.startswith('Temp_') or key.startswith('Pressure_') or key.startswith('FlowRate_'):
+                # Extract the sensor ID (01, 02, etc.)
+                sensor_id = key.split('_')[1]
+                reading_type = key.split('_')[0]  # Temp, Pressure, FlowRate, etc.
+                data.append({
+                    'sensorID': sensor_id,  # Only the numeric part (e.g., '01', '02')
+                    'reading_type': reading_type,
+                    'reading_value': value,
+                    'timestamp': timestamp
+                })
+
+    # Create DataFrame and convert reading_value to numeric, coerce errors to NaN
+    df = pd.DataFrame(data)
+    if not df.empty:
+        df['reading_value'] = pd.to_numeric(df['reading_value'], errors='coerce')
+
+    return df if not df.empty else pd.DataFrame()
 
 def home():
     """Render the main dashboard on the Home page."""
     st.title("IoT Dashboard Overview")
 
-    collection_name = "iot_gateway_reading"
+    # Fetch the device configurations and thresholds
+    device_configs = get_device_configs()  # device_config collection
+    collection_name = "iot_gateway_data"
     latest_df = fetch_latest_readings(collection_name)
 
+    if not device_configs:
+        st.write("No sensor configurations available.")
+        return
+
+    # Convert timestamps and format them
     if not latest_df.empty:
         latest_df['timestamp'] = pd.to_datetime(latest_df['timestamp'], utc=True)
         latest_df['timestamp'] = latest_df['timestamp'].dt.tz_convert('Asia/Singapore')
         latest_df['formatted_timestamp'] = latest_df['timestamp'].dt.strftime('%d/%m/%Y %H:%M')
-        latest_df = latest_df.sort_values(by='sensorID')
+        latest_df = latest_df.sort_values(by=['sensorID', 'reading_type'])
 
-        st.header("Latest Sensor/Regulator Readings")
+    st.header("Latest Sensor Readings")
 
-        st.markdown(
-            """
-            <style>
-            @keyframes flash {
-                0% { background-color: #f1948a; }
-                50% { background-color: #f5b7b1; }
-                100% { background-color: #f1948a; }
-            }
-            .flash-red {
-                animation: flash 1s infinite;
-            }
-            .sensor-container {
-                border: 1px solid #ddd;
-                border-radius: 10px;
-                padding: 15px;
-                background-color: #f5f5f5;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                width: calc(50% - 20px); /* Adjust width for 2 containers per row */
-                min-height: 200px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: space-between;
-                transition: transform 0.2s;
-                margin: 10px;
-            }
-            .sensor-container:hover {
-                transform: scale(1.05);
-            }
-            .sensor-grid {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: space-between;
-                gap: 20px; /* Adjust gap between items */
-            }
-            .sensor-info, .sensor-reading {
-                text-align: center;
-                margin-bottom: 10px;
-            }
-            .sensor-reading {
-                background-color: #abebc6;
-                padding: 10px;
-                border-radius: 5px;
-                width: 100%;
-            }
-            @media (max-width: 768px) {
-                .sensor-container {
-                    width: 100%; /* Full width on smaller screens */
-                }
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+    current_time = datetime.now(timezone.utc).astimezone()
 
-        # Display sensor data in a grid layout
-        st.markdown('<div class="sensor-grid">', unsafe_allow_html=True)
-        for sensor_id, group in latest_df.groupby('sensorID'):
-            for _, row in group.iterrows():
-                time_diff = datetime.now(timezone.utc) - row['timestamp']
-                is_outdated = time_diff.total_seconds() > 5 * 60  # 5 minutes threshold
-                container_bg_color = "#f1948a" if is_outdated else "#85c1e9"
-                flash_class = "flash-red" if is_outdated else ""
+    num_columns = 3  # Adjust based on screen width
+    cols = st.columns(num_columns)
 
-                st.markdown(
-                    f"""
-                    <div class="sensor-container {flash_class}" style="background-color: {container_bg_color};">
-                        <div class="sensor-info">
-                            <h3>{sensor_id}</h3>
-                            <p><strong>Timestamp:</strong> {row["formatted_timestamp"]}</p>
-                        </div>
-                        <div class="sensor-reading">
-                            <p><strong>Pressure:</strong> {row["pressure"]}</p>
-                        </div>
+    for idx, (sensor_id, config) in enumerate(device_configs.items()):
+        col = cols[idx % num_columns]  # Distribute sensors across columns
+        
+        name = config.get('name', f'Sensor {sensor_id}')
+        temp_max_threshold = config.get('Temp_max_threshold')
+        temp_min_threshold = config.get('Temp_min_threshold')
+        pressure_max_threshold = config.get('Pressure_max_threshold')
+        pressure_min_threshold = config.get('Pressure_min_threshold')
+        flowrate_max_threshold = config.get('FlowRate_max_threshold')
+        flowrate_min_threshold = config.get('FlowRate_min_threshold')
+        
+        device_df = latest_df[latest_df['sensorID'] == sensor_id]
+        
+        # Determine if the sensor should be grey (no readings)
+        if device_df.empty:
+            card_bg_color = '#E0E0E0'  # Grey color for no readings
+            card_border_color = '#B0B0B0'
+            card_shadow_color = '#A0A0A0'
+        else:
+            latest_timestamp = pd.to_datetime(device_df["timestamp"].max(), utc=True)
+            outdated_class = (current_time - latest_timestamp).total_seconds() > 600
+
+            card_bg_color = '#FFFFFF' if not outdated_class else '#F2F2F2'
+            card_border_color = '#E0E0E0'
+            card_shadow_color = '#B0B0B0'
+
+        with col:
+            st.markdown(f"""
+                <div style="
+                    border: 1px solid {card_border_color};
+                    border-radius: 10px;
+                    padding: 20px;
+                    background-color: {card_bg_color};
+                    box-shadow: 0 4px 6px {card_shadow_color};
+                    margin: 10px;
+                    overflow: hidden;
+                    transition: background-color 0.3s, box-shadow 0.3s;
+                ">
+                    <div style="
+                        text-align: center;
+                        margin-bottom: 15px;
+                        border-bottom: 1px solid {card_border_color};
+                        padding-bottom: 10px;
+                        font-size: 1.25em;
+                        color: #333;
+                        font-weight: bold;
+                        text-transform: uppercase;
+                    ">
+                        {name}
+                        <p style="font-size: 0.85em; color: #888;"><strong>Last Update:</strong> {device_df['formatted_timestamp'].max() if not device_df.empty else 'No data'}</p>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.write("No data available.")
+                    <div style="
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        flex-grow: 1;
+                    ">
+            """, unsafe_allow_html=True)
+            
+            for reading_type in ['Temp', 'Pressure', 'FlowRate']:
+                reading_row = device_df[device_df['reading_type'] == reading_type]
+                if not reading_row.empty:
+                    reading_value = reading_row['reading_value'].values[0]
+                    if reading_type == 'Temp':
+                        threshold_max = temp_max_threshold
+                        threshold_min = temp_min_threshold
+                    elif reading_type == 'Pressure':
+                        threshold_max = pressure_max_threshold
+                        threshold_min = pressure_min_threshold
+                    elif reading_type == 'FlowRate':
+                        threshold_max = flowrate_max_threshold
+                        threshold_min = flowrate_min_threshold
+
+                    is_alert_max = threshold_max is not None and reading_value > threshold_max
+                    is_alert_min = threshold_min is not None and reading_value < threshold_min
+                    alert_color = '#FFEBEE' if is_alert_max else '#E0F7FA' if is_alert_min else '#F5F5F5'
+                    alert_text = 'Alert! Exceeds threshold.' if is_alert_max else 'Warning! Below threshold.' if is_alert_min else ''
+                    alert_icon = '🔔' if alert_text else ''
+
+                    st.markdown(f"""
+                        <div style="
+                            background-color: {alert_color};
+                            border-radius: 8px;
+                            padding: 12px;
+                            text-align: center;
+                            transition: background-color 0.3s;
+                            border: 1px solid {card_border_color};
+                            font-size: 1em;
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            box-shadow: 0 2px 4px {card_shadow_color};
+                        ">
+                            <p style="margin: 0; font-weight: bold;">{reading_type}:</p>
+                            <p style="margin: 0;">{reading_value}</p>
+                            <div style="
+                                position: relative;
+                                display: inline-block;
+                            ">
+                                <span style="
+                                    font-size: 1.2em;
+                                    cursor: pointer;
+                                ">{alert_icon}</span>
+                                <div style="
+                                    visibility: hidden;
+                                    width: 200px;
+                                    background-color: #333;
+                                    color: #fff;
+                                    text-align: center;
+                                    border-radius: 6px;
+                                    padding: 5px 0;
+                                    position: absolute;
+                                    z-index: 1;
+                                    bottom: 125%;
+                                    left: 50%;
+                                    margin-left: -100px;
+                                    opacity: 0;
+                                    transition: opacity 0.3s;
+                                    white-space: nowrap;
+                                ">
+                                    {alert_text}
+                                </div>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Display placeholder for missing readings
+                    st.markdown(f"""
+                        <div style="
+                            background-color: #F5F5F5;
+                            border-radius: 8px;
+                            padding: 12px;
+                            text-align: center;
+                            border: 1px solid {card_border_color};
+                            font-size: 1em;
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            box-shadow: 0 2px 4px {card_shadow_color};
+                        ">
+                            <p style="margin: 0; font-weight: bold;">{reading_type}:</p>
+                            <p style="margin: 0;">No data available</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+            
+            st.markdown("""
+                <style>
+                    .tooltip:hover .tooltiptext {{
+                        visibility: visible;
+                        opacity: 1;
+                    }}
+                </style>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("</div></div>", unsafe_allow_html=True)
+
+

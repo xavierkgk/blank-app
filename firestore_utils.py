@@ -98,3 +98,19 @@ def add_user(new_username, new_name, new_email, new_password, new_role):
         'password': hash_password(new_password),  # Hash the password before storing
         'role': new_role
     })
+
+
+def get_device_configs():
+    """Fetch device configurations from the 'device_config' collection."""
+    db = get_database()
+    device_configs_ref = db.collection('sensor_configurations')
+    docs = device_configs_ref.stream()
+    
+    configs = {}
+    for doc in docs:
+        doc_id = doc.id  # The document ID is the sensor ID
+        configs[doc_id] = doc.to_dict()  # Store the document data in the dictionary
+    
+    return configs
+
+
