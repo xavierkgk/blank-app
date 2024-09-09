@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 from firestore_utils import get_database
 
 # Function to fetch historical readings from Firestore
-def fetch_historical_readings(collection_name, sensor_id=None):
+def fetch_historical_readings(collection_name, sensor_id=None, start_date=None, end_date=None):
     db = get_database()
     docs = db.collection(collection_name).get()
     
@@ -39,7 +39,14 @@ def fetch_historical_readings(collection_name, sensor_id=None):
 
     df = pd.DataFrame(data)
     if not df.empty:
-        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_localize(None)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_convert('Asia/Kuala_Lumpur')
+        
+        # Convert start_date and end_date to datetime with Malaysia timezone
+        if start_date and end_date:
+            start_datetime = pd.to_datetime(start_date).tz_localize('Asia/Kuala_Lumpur')
+            end_datetime = pd.to_datetime(end_date).tz_localize('Asia/Kuala_Lumpur')
+            df = df[(df['timestamp'] >= start_datetime) & (df['timestamp'] <= end_datetime)]
+            
     return df
 
 # Function to fetch device configurations from Firestore
@@ -89,9 +96,18 @@ def device_reading():
     sensor_ids = ['All'] + list(device_configs.keys())
     sensor_id = st.sidebar.selectbox('Select Sensor ID', sensor_ids)
     
+    # Date range filter
+    st.sidebar.header("Date Range Filter")
+    start_date = st.sidebar.date_input('Start Date', datetime.now().date())
+    end_date = st.sidebar.date_input('End Date', datetime.now().date())
+    
+    if start_date > end_date:
+        st.sidebar.error("Error: End date must be after start date.")
+        return
+    
     # Fetch data
     collection_name = 'iot_gateway_data'  
-    df = fetch_historical_readings(collection_name, sensor_id if sensor_id != 'All' else None)
+    df = fetch_historical_readings(collection_name, sensor_id if sensor_id != 'All' else None, start_date, end_date)
     
     if df.empty:
         st.write("No data available.")
