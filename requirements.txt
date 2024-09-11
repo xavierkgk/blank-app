@@ -2,7 +2,7 @@ streamlit
 firebase-admin
 streamlit-authenticator
 streamlit-navigation-bar
-fpdf2
+reportlab
 streamlit_card
 matplotlib
 plotly
