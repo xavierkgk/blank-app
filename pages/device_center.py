@@ -56,7 +56,6 @@ def delete_sensor(sensor_id):
 
 def device_center():
     """Render the Device Center page for configuring device thresholds."""
-    # Check user role
     if st.session_state.get('user_role') not in ['super_admin', 'admin']:
         st.write("You have no access to the Device Center Page.")
         return
@@ -119,45 +118,11 @@ def device_center():
 
         # Display instructions and the dataframe
         st.write("Update thresholds below:")
-        st.markdown(
-            """
-            <style>
-            .dataframe {
-                border-collapse: collapse;
-                width: 100%;
-            }
-            .dataframe th, .dataframe td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                text-align: left;
-            }
-            .dataframe th {
-                background-color: #f4f4f4;
-                color: #333;
-                font-weight: bold;
-            }
-            .dataframe tr:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-            .dataframe tr:hover {
-                background-color: #e2e2e2;
-            }
-            .dataframe td {
-                font-size: 14px;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Use Streamlit's editor to allow user input for threshold values and sensor names
-        updated_df = st.data_editor(df, use_container_width=True, key="sensor_thresholds", hide_index=True)
+        st.data_editor(df, use_container_width=True, key="sensor_thresholds", hide_index=True)
 
         if st.button("Save Thresholds"):
-            # Prepare data for saving
             sensor_configs = {}
-
-            for _, row in updated_df.iterrows():
+            for _, row in df.iterrows():
                 sensor_id = row['Sensor ID']
                 sensor_configs[sensor_id] = {
                     'name': row['Sensor Name'],
@@ -168,8 +133,6 @@ def device_center():
                     'FlowRate_min_threshold': row['FlowRate Min Threshold'],
                     'FlowRate_max_threshold': row['FlowRate Max Threshold'],
                 }
-
-            # Save new thresholds and sensor names
             save_thresholds(sensor_configs)
             st.success("Thresholds and sensor names updated successfully!")
     else:

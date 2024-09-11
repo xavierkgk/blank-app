@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime
 from firestore_utils import get_database
 
 # Function to fetch historical readings from Firestore
@@ -14,34 +17,26 @@ def fetch_historical_readings(collection_name, sensor_id=None, start_date=None, 
     for doc in docs:
         record = doc.to_dict()
         timestamp = record.get('timestamp')
-        if sensor_id:
-            # Filter by sensor_id
-            filtered = {k: v for k, v in record.items() if k.endswith(f'_{sensor_id}')}
-            for key, value in filtered.items():
+        
+        for key, value in record.items():
+            if key.startswith(('Temp_', 'Pressure_', 'FlowRate_')):
                 reading_type = key.split('_')[0]
+                sensor_id_from_key = key.split('_')[1]
+                
+                if sensor_id and sensor_id != sensor_id_from_key:
+                    continue
+                
                 data.append({
-                    'sensorID': sensor_id,
+                    'sensorID': sensor_id_from_key,
                     'reading_type': reading_type,
                     'reading_value': value,
                     'timestamp': timestamp
                 })
-        else:
-            for key, value in record.items():
-                if key.startswith(('Temp_', 'Pressure_', 'FlowRate_')):
-                    sensor_id = key.split('_')[1]
-                    reading_type = key.split('_')[0]
-                    data.append({
-                        'sensorID': sensor_id,
-                        'reading_type': reading_type,
-                        'reading_value': value,
-                        'timestamp': timestamp
-                    })
 
     df = pd.DataFrame(data)
     if not df.empty:
         df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_convert('Asia/Kuala_Lumpur')
         
-        # Convert start_date and end_date to datetime with Malaysia timezone
         if start_date and end_date:
             start_datetime = pd.to_datetime(start_date).tz_localize('Asia/Kuala_Lumpur')
             end_datetime = pd.to_datetime(end_date).tz_localize('Asia/Kuala_Lumpur')
@@ -63,28 +58,91 @@ def get_device_configs():
 
 # Function to export data to Excel
 def export_to_excel(df):
+    # Convert timezone-aware datetime to timezone-unaware datetime
+    if df['timestamp'].dt.tz is not None:
+        df['timestamp'] = df['timestamp'].dt.tz_localize(None)
+    
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Readings', index=False)
-        writer.save()
+        writer.close()  # Use close() instead of save()
     return output
 
 # Function to export data to PDF
 def export_to_pdf(df):
-    from fpdf import FPDF
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    
-    pdf.cell(200, 10, txt="Sensor Readings", ln=True, align='C')
-
-    for index, row in df.iterrows():
-        pdf.cell(200, 10, txt=f"{row['timestamp']} | Sensor {row['sensorID']} | {row['reading_type']}: {row['reading_value']}", ln=True)
-    
     output = BytesIO()
-    pdf.output(output)
+    pdf = SimpleDocTemplate(output, pagesize=letter)
+
+    # Prepare data for the table
+    data = [['Timestamp', 'Sensor ID', 'Reading Type', 'Reading Value']]  # Table header
+    for index, row in df.iterrows():
+        data.append([
+            str(row['timestamp']),
+            str(row['sensorID']),
+            str(row['reading_type']),
+            str(row['reading_value'])
+        ])
+
+    # Create a table with data
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    # Build the PDF
+    pdf.build([table])
+    output.seek(0)  # Reset the BytesIO object to the beginning
+    
     return output
 
+# Function to plot time series data
+def plot_time_series(df):
+    # Ensure the timestamp column is datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    for reading_type in df['reading_type'].unique():
+        filtered_df = df[df['reading_type'] == reading_type]
+
+        # Sort the DataFrame by timestamp
+        filtered_df = filtered_df.sort_values(by='timestamp')
+        
+        # Create the time series plot
+        fig = px.line(
+            filtered_df,
+            x='timestamp',
+            y='reading_value',
+            color='sensorID',
+            title=f'{reading_type} Readings Over Time',
+            labels={'timestamp': 'Time', 'reading_value': reading_type}
+        )
+        
+        # Customize the x-axis to ensure it's treated as a time series
+        fig.update_xaxes(
+            title_text='Time',
+            dtick='M1',  # Display every month
+            tickformat='%Y-%m-%d %H:%M:%S',  # Format date and time
+            ticklabelmode='period'
+        )
+        
+        # Customize the y-axis
+        fig.update_yaxes(title_text=reading_type)
+
+        # Update layout for better visualization
+        fig.update_layout(
+            xaxis_title='Time',
+            yaxis_title=reading_type,
+            legend_title='Sensor ID',
+            title_font_size=18,
+            xaxis_title_font_size=14,
+            yaxis_title_font_size=14
+        )
+        
+        # Display the plot
+        st.plotly_chart(fig, use_container_width=True)
 # Streamlit app
 def device_reading():
     st.title("Historical Sensor Readings")
@@ -113,13 +171,9 @@ def device_reading():
         st.write("No data available.")
         return
     
-    # Display a chart
+    # Display time series chart
     st.header("Sensor Readings Over Time")
-    
-    for reading_type in df['reading_type'].unique():
-        filtered_df = df[df['reading_type'] == reading_type]
-        fig = px.line(filtered_df, x='timestamp', y='reading_value', color='sensorID', title=f'{reading_type} Readings')
-        st.plotly_chart(fig, use_container_width=True)
+    plot_time_series(df)
     
     # Export functionality
     st.header("Export Data")

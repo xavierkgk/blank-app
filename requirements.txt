@@ -2,7 +2,8 @@ streamlit
 firebase-admin
 streamlit-authenticator
 streamlit-navigation-bar
-fpdf
+fpdf2
 streamlit_card
 matplotlib
 plotly
+streamlit_autorefresh

@@ -9,6 +9,8 @@ from pages.device_center import device_center
 from pages.device_reading import device_reading  
 from pages.user_management import user_management
 
+st.set_page_config(layout="wide")
+
 # Initialize session state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -34,7 +36,7 @@ def handle_navigation():
 if st.session_state['logged_in']:
     # Create a navigation bar using the streamlit-navigation-bar library
     selected = st_navbar(
-        pages=['Home', 'Device Reading','Device Center', 'User Management', 'Logout'],  # Added Device Reading
+        pages=['Home', 'Device Reading','Device Center', 'User Management', 'Logout'],
         key='navbar'
     )
 
@@ -45,7 +47,16 @@ if st.session_state['logged_in']:
     handle_navigation()
 
 else:
-    st.title("Login")
+    #st.title("Login")
+    
+    # Display the logo
+    st.markdown("""
+        <div style="text-align: center;">
+            <img src="https://smartforgesolutions.com/wp-content/uploads/2023/12/SF_Logo-1.png" alt="Logo" style="width: 200px;"/>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Login form
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
