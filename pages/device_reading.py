@@ -76,9 +76,6 @@ def plot_time_series_with_thresholds(df, thresholds, sensor_id_filter):
         # Add threshold lines if a specific sensor is selected
         if sensor_id_filter != 'All':
             sensor_threshold = thresholds.get(sensor_id_filter, {})
-
-            # Debug: Print the thresholds fetched
-            st.write(f"Thresholds for Sensor {sensor_id_filter}: {sensor_threshold}")
             
             # Mapping thresholds dynamically for different reading types (Temp, Pressure, FlowRate)
             if reading_type == 'Temp':
@@ -108,7 +105,7 @@ def plot_time_series_with_thresholds(df, thresholds, sensor_id_filter):
         fig.update_layout(
             xaxis_title='Time',
             yaxis_title=reading_type,
-            legend_title='Sensor ID',
+            legend_title='Device ID',
             title_font_size=18,
             xaxis_title_font_size=14,
             yaxis_title_font_size=14
@@ -132,7 +129,7 @@ def export_to_pdf(df):
     pdf = SimpleDocTemplate(output, pagesize=letter)
 
     # Prepare data for the table
-    data = [['Timestamp', 'Sensor ID', 'Reading Type', 'Reading Value']]  # Table header
+    data = [['Timestamp', 'Device ID', 'Reading Type', 'Reading Value']]  # Table header
     for index, row in df.iterrows():
         data.append([
             str(row['timestamp']),
@@ -159,7 +156,7 @@ def export_to_pdf(df):
 
 # Streamlit app
 def device_reading():
-    st.title("Historical Sensor Readings")
+    st.title("Historical Data Readings")
     
     # Fetch device configurations and thresholds
     sensor_configs = fetch_sensor_configurations()
@@ -168,10 +165,10 @@ def device_reading():
     st.header("Filter Options")
     col1, col2 = st.columns(2)
     
-    # Filter by Sensor ID
+    # Filter by Device ID
     with col1:
         sensor_ids = ['All'] + list(sensor_configs.keys())
-        sensor_id = st.selectbox('Select Sensor ID', sensor_ids)
+        sensor_id = st.selectbox('Select Device ID', sensor_ids)
     
     # Date range filter
     with col2:
@@ -191,7 +188,7 @@ def device_reading():
         return
 
     # Plot time series with thresholds
-    st.header("Sensor Readings Over Time")
+    st.header("Device Readings Over Time")
     plot_time_series_with_thresholds(df, sensor_configs, sensor_id)
 
         # Export functionality

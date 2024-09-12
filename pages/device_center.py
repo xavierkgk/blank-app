@@ -2,57 +2,61 @@ import streamlit as st
 import pandas as pd
 from firestore_utils import get_database
 
-def fetch_all_sensors():
-    """Fetch all sensor IDs and names from the 'sensor_configurations' collection."""
+def fetch_all_devices():
+    """Fetch all Device IDs and names from the 'sensor_configurations' collection."""
     db = get_database()
     docs = db.collection('sensor_configurations').get()
 
-    sensors = []
+    devices = []
     for doc in docs:
-        sensor_id = doc.id
-        sensor_name = doc.to_dict().get('name', f"Sensor {sensor_id}")
-        sensors.append({'id': sensor_id, 'name': sensor_name})
+        device_id = doc.id
+        device_name = doc.to_dict().get('name', f"Device {device_id}")
+        devices.append({'id': device_id, 'name': device_name})
 
-    return sorted(sensors, key=lambda x: x['id'])
+    return sorted(devices, key=lambda x: x['id'])
 
-def fetch_sensor_configurations(sensor_ids):
-    """Fetch the existing threshold configurations for given sensor IDs."""
+def fetch_device_configurations(device_ids):
+    """Fetch the existing threshold configurations for given device IDs."""
     db = get_database()
     configs = {}
 
-    for sensor_id in sensor_ids:
-        doc = db.collection('sensor_configurations').document(sensor_id).get()
+    for device_id in device_ids:
+        doc = db.collection('sensor_configurations').document(device_id).get()
         if doc.exists:
-            configs[sensor_id] = doc.to_dict()
+            configs[device_id] = doc.to_dict()
 
     return configs
 
-def save_thresholds(sensor_configs):
-    """Save the threshold configurations and sensor information."""
+def save_thresholds(device_configs):
+    """Save the threshold configurations and device information."""
     db = get_database()
     
-    # Save the new thresholds and sensor details
-    for sensor_id, config in sensor_configs.items():
-        db.collection('sensor_configurations').document(sensor_id).set(config, merge=True)
+    # Save the new thresholds and device details
+    for device_id, config in device_configs.items():
+        try:
+            db.collection('sensor_configurations').document(device_id).set(config, merge=True)
+        except Exception as e:
+            st.error(f"Failed to save configuration for device {device_id}: {e}")
+            return
 
-def add_sensor(sensor_id, sensor_name):
-    """Add a new sensor to the 'sensor_configurations' collection."""
+def add_device(device_id, device_name):
+    """Add a new device to the 'sensor_configurations' collection."""
     db = get_database()
-    if db.collection('sensor_configurations').document(sensor_id).get().exists:
-        st.error("Sensor ID already exists.")
+    if db.collection('sensor_configurations').document(device_id).get().exists:
+        st.error("Device ID already exists.")
         return
 
-    db.collection('sensor_configurations').document(sensor_id).set({'name': sensor_name})
-    st.success("Sensor added successfully!")
+    db.collection('sensor_configurations').document(device_id).set({'name': device_name})
+    st.success("Device added successfully!")
 
-def delete_sensor(sensor_id):
-    """Delete a sensor from the 'sensor_configurations' collection."""
+def delete_device(device_id):
+    """Delete a device from the 'sensor_configurations' collection."""
     db = get_database()
-    if db.collection('sensor_configurations').document(sensor_id).get().exists:
-        db.collection('sensor_configurations').document(sensor_id).delete()
-        st.success(f"Sensor {sensor_id} deleted successfully!")
+    if db.collection('sensor_configurations').document(device_id).get().exists:
+        db.collection('sensor_configurations').document(device_id).delete()
+        st.success(f"Device {device_id} deleted successfully!")
     else:
-        st.error("Sensor ID does not exist.")
+        st.error("Device ID does not exist.")
 
 def device_center():
     """Render the Device Center page for configuring device thresholds."""
@@ -62,70 +66,70 @@ def device_center():
 
     st.title("Device Center")
 
-    # Add sensor functionality
-    st.subheader("Add New Sensor")
-    new_sensor_id = st.text_input("Sensor ID", "")
-    new_sensor_name = st.text_input("Sensor Name", "")
+    # Add device functionality
+    st.subheader("Add New Device")
+    new_device_id = st.text_input("Device ID", "")
+    new_device_name = st.text_input("Device Name", "")
     
-    if st.button("Add Sensor"):
-        if new_sensor_id and new_sensor_name:
-            add_sensor(new_sensor_id, new_sensor_name)
+    if st.button("Add Device"):
+        if new_device_id and new_device_name:
+            add_device(new_device_id, new_device_name)
         else:
-            st.error("Please provide both Sensor ID and Sensor Name.")
+            st.error("Please provide both Device ID and Device Name.")
 
-    # Delete sensor functionality
-    st.subheader("Delete Sensor")
-    delete_sensor_id = st.text_input("Sensor ID to Delete", "")
+    # Delete device functionality
+    st.subheader("Delete Device")
+    delete_device_id = st.text_input("Device ID to Delete", "")
     
-    if st.button("Delete Sensor"):
-        if delete_sensor_id:
-            delete_sensor(delete_sensor_id)
+    if st.button("Delete Device"):
+        if delete_device_id:
+            delete_device(delete_device_id)
         else:
-            st.error("Please provide a Sensor ID to delete.")
+            st.error("Please provide a Device ID to delete.")
 
-    # Fetch all sensors
-    sensors = fetch_all_sensors()
+    # Fetch all devices
+    devices = fetch_all_devices()
 
-    if sensors:
+    if devices:
         st.subheader("Device Threshold Configuration")
 
         # Fetch existing configurations
-        sensor_ids = [sensor['id'] for sensor in sensors]
-        existing_configs = fetch_sensor_configurations(sensor_ids)
+        device_ids = [device['id'] for device in devices]
+        existing_configs = fetch_device_configurations(device_ids)
 
         # Prepare data for display
         data = []
-        sensor_columns = ['Sensor ID', 'Sensor Name', 'Temp Min Threshold', 'Temp Max Threshold',
+        device_columns = ['Device ID', 'Device Name', 'Temp Min Threshold', 'Temp Max Threshold',
                           'Pressure Min Threshold', 'Pressure Max Threshold', 
                           'FlowRate Min Threshold', 'FlowRate Max Threshold']
 
-        for sensor in sensors:
-            sensor_id = sensor['id']
-            sensor_name = sensor['name']
-            sensor_config = existing_configs.get(sensor_id, {})
+        for device in devices:
+            device_id = device['id']
+            device_name = device['name']
+            device_config = existing_configs.get(device_id, {})
             data.append([
-                sensor_id,
-                sensor_name,
-                sensor_config.get('Temp_min_threshold', 0),
-                sensor_config.get('Temp_max_threshold', 100),
-                sensor_config.get('Pressure_min_threshold', 0),
-                sensor_config.get('Pressure_max_threshold', 100),
-                sensor_config.get('FlowRate_min_threshold', 0),
-                sensor_config.get('FlowRate_max_threshold', 100),
+                device_id,
+                device_name,
+                device_config.get('Temp_min_threshold', 0),
+                device_config.get('Temp_max_threshold', 100),
+                device_config.get('Pressure_min_threshold', 0),
+                device_config.get('Pressure_max_threshold', 100),
+                device_config.get('FlowRate_min_threshold', 0),
+                device_config.get('FlowRate_max_threshold', 100),
             ])
 
-        df = pd.DataFrame(data, columns=sensor_columns)
+        df = pd.DataFrame(data, columns=device_columns)
 
         # Display instructions and the dataframe
         st.write("Update thresholds below:")
-        st.data_editor(df, use_container_width=True, key="sensor_thresholds", hide_index=True)
+        df = st.data_editor(df, use_container_width=True, key="device_thresholds", hide_index=True)
 
         if st.button("Save Thresholds"):
-            sensor_configs = {}
+            device_configs = {}
             for _, row in df.iterrows():
-                sensor_id = row['Sensor ID']
-                sensor_configs[sensor_id] = {
-                    'name': row['Sensor Name'],
+                device_id = row['Device ID']
+                device_configs[device_id] = {
+                    'name': row['Device Name'],
                     'Temp_min_threshold': row['Temp Min Threshold'],
                     'Temp_max_threshold': row['Temp Max Threshold'],
                     'Pressure_min_threshold': row['Pressure Min Threshold'],
@@ -133,7 +137,11 @@ def device_center():
                     'FlowRate_min_threshold': row['FlowRate Min Threshold'],
                     'FlowRate_max_threshold': row['FlowRate Max Threshold'],
                 }
-            save_thresholds(sensor_configs)
-            st.success("Thresholds and sensor names updated successfully!")
+
+            try:
+                save_thresholds(device_configs)
+                st.success("Changes updated successfully!")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
     else:
-        st.write("No sensors found in the database.")
+        st.write("No devices found in the database.")
