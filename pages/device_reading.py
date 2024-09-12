@@ -1,7 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from io import BytesIO
 from datetime import datetime
 from firestore_utils import get_database
 
@@ -112,6 +115,48 @@ def plot_time_series_with_thresholds(df, thresholds, sensor_id_filter):
         )
         st.plotly_chart(fig, use_container_width=True)
 
+def export_to_excel(df):
+    # Convert timezone-aware datetime to timezone-unaware datetime
+    if df['timestamp'].dt.tz is not None:
+        df['timestamp'] = df['timestamp'].dt.tz_localize(None)
+    
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name='Readings', index=False)
+        writer.close()  # Use close() instead of save()
+    return output
+
+# Function to export data to PDF
+def export_to_pdf(df):
+    output = BytesIO()
+    pdf = SimpleDocTemplate(output, pagesize=letter)
+
+    # Prepare data for the table
+    data = [['Timestamp', 'Sensor ID', 'Reading Type', 'Reading Value']]  # Table header
+    for index, row in df.iterrows():
+        data.append([
+            str(row['timestamp']),
+            str(row['sensorID']),
+            str(row['reading_type']),
+            str(row['reading_value'])
+        ])
+
+    # Create a table with data
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    # Build the PDF
+    pdf.build([table])
+    output.seek(0)  # Reset the BytesIO object to the beginning
+    
+    return output
+
 # Streamlit app
 def device_reading():
     st.title("Historical Sensor Readings")
@@ -148,6 +193,17 @@ def device_reading():
     # Plot time series with thresholds
     st.header("Sensor Readings Over Time")
     plot_time_series_with_thresholds(df, sensor_configs, sensor_id)
+
+        # Export functionality
+    st.header("Export Data")
+    
+    if st.button('Export to Excel'):
+        excel_file = export_to_excel(df)
+        st.download_button('Download Excel File', excel_file.getvalue(), file_name='sensor_readings.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    
+    if st.button('Export to PDF'):
+        pdf_file = export_to_pdf(df)
+        st.download_button('Download PDF File', pdf_file.getvalue(), file_name='sensor_readings.pdf', mime='application/pdf')
 
 if __name__ == "__main__":
     device_reading()
