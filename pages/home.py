@@ -4,7 +4,6 @@ from datetime import datetime, timezone, timedelta
 from firestore_utils import get_database, get_device_configs
 from streamlit_autorefresh import st_autorefresh
 
-
 def fetch_latest_readings(collection_name):
     """Fetch the latest reading for each sensor from Firestore and format the data."""
     db = get_database()
@@ -43,8 +42,24 @@ def display_sensor_readings(latest_df, device_configs):
     current_time = datetime.now(timezone.utc).astimezone()
     flash_color_threshold = timedelta(minutes=10)  # 10 minutes threshold
 
-    # Create a container to hold sensor readings
-    st.write("<style> .reading-box { padding: 12px; } </style>", unsafe_allow_html=True)
+    # Define CSS for flashing animations
+    st.write("""
+        <style>
+            .flash-red { animation: flash-red 1s infinite; }
+            @keyframes flash-red {
+                0% { background-color: #FFCCCC; }
+                50% { background-color: #FF0000; }
+                100% { background-color: #FFCCCC; }
+            }
+            .flash-yellow { animation: flash-yellow 1s infinite; }
+            @keyframes flash-yellow {
+                0% { background-color: #FFFFCC; }
+                50% { background-color: #FFFF00; }
+                100% { background-color: #FFFFCC; }
+            }
+            .reading-box { padding: 12px; }
+        </style>
+    """, unsafe_allow_html=True)
 
     # Create a responsive layout using Streamlit's columns
     cols = st.columns(5)  
@@ -61,27 +76,21 @@ def display_sensor_readings(latest_df, device_configs):
         device_df = latest_df[latest_df['sensorID'] == sensor_id]
 
         if device_df.empty:
-            card_bg_color = '#E0E0E0'
-            card_border_color = '#B0B0B0'
-            card_shadow_color = '#A0A0A0'
-            flash_animation = ''
+            card_class = ''
             last_update = 'No data'
         else:
             latest_timestamp = pd.to_datetime(device_df["timestamp"].max(), utc=True)
             outdated_class = (current_time - latest_timestamp) > flash_color_threshold
 
-            card_bg_color = '#FFCCCC' if outdated_class else '#FFFFFF'
-            card_border_color = '#E0E0E0'
-            card_shadow_color = '#B0B0B0'
-            flash_animation = 'flash-animation' if outdated_class else ''
+            card_class = 'flash-red' if outdated_class else ''
             last_update = device_df['formatted_timestamp'].max()
 
         col = cols[i % 5]  # Cycle through columns
 
         with col:
             st.markdown(f"""
-                <div style="border: 1px solid {card_border_color}; background-color: {card_bg_color}; box-shadow: 0 4px 6px {card_shadow_color}; border-radius: 10px; padding: 10px; margin-bottom: 10px;">
-                    <div style="text-align: center; margin-bottom: 15px; border-bottom: 1px solid {card_border_color}; padding-bottom: 10px; font-size: 1.25em; color: #333; font-weight: bold; text-transform: uppercase;">
+                <div style="border: 1px solid #E0E0E0; box-shadow: 0 4px 6px #B0B0B0; border-radius: 10px; padding: 10px; margin-bottom: 10px;" class="{card_class}">
+                    <div style="text-align: center; margin-bottom: 15px; border-bottom: 1px solid #E0E0E0; padding-bottom: 10px; font-size: 1.25em; color: #333; font-weight: bold; text-transform: uppercase;">
                         {name}
                         <p style="font-size: 0.85em; color: #888;"><strong>Last Update:</strong> {last_update}</p>
                     </div>
@@ -104,7 +113,7 @@ def display_sensor_readings(latest_df, device_configs):
 
                     is_alert_max = threshold_max is not None and reading_value > threshold_max
                     is_alert_min = threshold_min is not None and reading_value < threshold_min
-                    alert_class = 'alert-max' if is_alert_max else 'alert-min' if is_alert_min else ''
+                    alert_class = 'flash-yellow' if is_alert_max or is_alert_min else ''
 
                     st.markdown(f"""
                         <div style="background-color: #F5F5F5; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #E0E0E0; box-shadow: 0 2px 4px #B0B0B0;" class="{alert_class}">
